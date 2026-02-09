@@ -1,0 +1,11 @@
+# Comandos para PowerShell - Configuración rápida
+
+# 1. Ya estás en la carpeta server, solo copia el archivo:
+copy env.example .env
+
+# 2. Edita el archivo .env con tu editor favorito y agrega tu API Key:
+#    Abre .env y cambia: OPENAI_API_KEY=sk-tu-api-key-aqui
+#    Por tu API Key real de OpenAI
+
+# 3. Inicia el servidor:
+npm start

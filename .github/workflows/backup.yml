@@ -1,0 +1,25 @@
+name: Daily Backup
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Archive SQLite DB
+        run: |
+          mkdir -p backups
+          TS=$(date +%Y%m%d-%H%M%S)
+          if [ -f "kyrbi-backend/database/kyrbi.sqlite" ]; then
+            cp kyrbi-backend/database/kyrbi.sqlite backups/kyrbi.sqlite.$TS
+          fi
+          tar -czf backups/kyrbi-backend-$TS.tar.gz kyrbi-backend
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backups
+          path: backups

@@ -1,0 +1,21 @@
+name: Deploy Frontend to Vercel
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'kyrbi-frontend/**'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy
+        uses: vercel/actions@v2
+        with:
+          working-directory: kyrbi-frontend
+          token: ${{ secrets.VERCEL_TOKEN }}
+          scope: ${{ secrets.VERCEL_ORG_ID }}
+          project-id: ${{ secrets.VERCEL_PROJECT_ID }}
