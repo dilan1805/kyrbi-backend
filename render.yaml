@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: kyrbi-backend
+    env: node
+    buildCommand: npm install
+    startCommand: node index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        value: sqlite:./database/kyrbi.sqlite
+      - key: BACKEND_URL
+        fromService:
+          name: kyrbi-backend
+          type: web
+          property: host
