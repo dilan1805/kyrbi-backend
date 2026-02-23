@@ -70,6 +70,15 @@ describe('Auth Endpoints', () => {
     expect(String(res.body.error || '')).toContain('inicio de sesion social');
   });
 
+  it('should not return 500 when oauth provider is not configured', async () => {
+    const res = await request(app).get('/api/auth/google');
+
+    expect([302, 503]).toContain(res.statusCode);
+    if (res.statusCode === 302) {
+      expect(String(res.headers.location || '')).toContain('error=');
+    }
+  });
+
   it('should get user profile with valid token', async () => {
     const res = await request(app)
       .get('/api/auth/me')
