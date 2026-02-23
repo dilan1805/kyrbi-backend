@@ -1,6 +1,6 @@
 import request from 'supertest';
 import app from '../index.js';
-import { sequelize } from '../models/index.js';
+import { sequelize, User } from '../models/index.js';
 
 beforeAll(async () => {
   await sequelize.sync({ force: true });
@@ -49,6 +49,25 @@ describe('Auth Endpoints', () => {
       });
 
     expect(res.statusCode).toEqual(401);
+  });
+
+  it('should return 401 (not 500) for social account without password', async () => {
+    await User.create({
+      username: 'social_only_user',
+      email: 'social_only@example.com',
+      password: null,
+      googleId: 'google-social-1',
+    });
+
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: 'social_only@example.com',
+        password: 'Password123!',
+      });
+
+    expect(res.statusCode).toEqual(401);
+    expect(String(res.body.error || '')).toContain('inicio de sesion social');
   });
 
   it('should get user profile with valid token', async () => {

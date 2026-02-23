@@ -89,6 +89,20 @@ export const register = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
+    if (error?.name === 'SequelizeUniqueConstraintError') {
+      const fields = Object.keys(error?.fields || {});
+      if (fields.includes('email')) {
+        return res.status(400).json({ error: 'El email ya esta registrado.' });
+      }
+      if (fields.includes('username')) {
+        return res.status(400).json({ error: 'El nombre de usuario ya esta en uso.' });
+      }
+      return res.status(400).json({ error: 'Ya existe un usuario con esos datos.' });
+    }
+    if (error?.name === 'SequelizeValidationError') {
+      const first = error?.errors?.[0]?.message || 'Datos de registro invalidos.';
+      return res.status(400).json({ error: first });
+    }
     res.status(500).json({ error: 'Error al registrar usuario.' });
   }
 };
@@ -104,7 +118,24 @@ export const login = async (req, res) => {
     }
 
     const user = await User.findOne({ where: { email } });
-    if (!user || !(await user.validatePassword(password))) {
+    if (!user) {
+      return res.status(401).json({ error: 'Credenciales incorrectas.' });
+    }
+
+    if (!user.password) {
+      return res.status(401).json({
+        error: 'Esta cuenta usa inicio de sesion social. Inicia con Google/Facebook o recupera tu contrasena.'
+      });
+    }
+
+    let passwordValid = false;
+    try {
+      passwordValid = await user.validatePassword(password);
+    } catch {
+      passwordValid = false;
+    }
+
+    if (!passwordValid) {
       return res.status(401).json({ error: 'Credenciales incorrectas.' });
     }
 
