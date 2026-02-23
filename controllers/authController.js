@@ -27,11 +27,29 @@ const sendMail = async (to, subject, html) => {
 
 export const register = async (req, res) => {
   try {
-    const { username, email, password, captchaToken } = req.body;
+    const username = String(req.body?.username || '').trim();
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const password = String(req.body?.password || '');
+    const { captchaToken } = req.body;
     
+    if (!username || !email || !password) {
+      return res.status(400).json({ error: 'Completa username, email y password.' });
+    }
+    if (username.length < 3) {
+      return res.status(400).json({ error: 'El nombre de usuario debe tener al menos 3 caracteres.' });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'La contrasena debe tener al menos 6 caracteres.' });
+    }
+
     const existingUser = await User.findOne({ where: { email } });
     if (existingUser) {
       return res.status(400).json({ error: 'El email ya está registrado.' });
+    }
+
+    const existingUsername = await User.findOne({ where: { username } });
+    if (existingUsername) {
+      return res.status(400).json({ error: 'El nombre de usuario ya esta en uso.' });
     }
 
     if (process.env.RECAPTCHA_SECRET) {
@@ -77,8 +95,14 @@ export const register = async (req, res) => {
 
 export const login = async (req, res) => {
   try {
-    const { email, password, captchaToken } = req.body;
-    
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const password = String(req.body?.password || '');
+    const { captchaToken } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Completa email y contrasena.' });
+    }
+
     const user = await User.findOne({ where: { email } });
     if (!user || !(await user.validatePassword(password))) {
       return res.status(401).json({ error: 'Credenciales incorrectas.' });
@@ -207,7 +231,9 @@ export const resetPassword = async (req, res) => {
 
 export const verify2FA = async (req, res) => {
   try {
-    const { email, token } = req.body;
+    const email = String(req.body?.email || '').trim().toLowerCase();
+    const token = String(req.body?.token || '').trim();
+    if (!email || !token) return res.status(400).json({ error: 'Email y token requeridos' });
     const user = await User.findOne({ where: { email } });
     if (!user) return res.status(401).json({ error: 'Usuario no encontrado' });
 
@@ -329,5 +355,36 @@ export const getMe = async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error obteniendo perfil' });
+  }
+};
+
+export const updatePreferences = async (req, res) => {
+  try {
+    const { preferences } = req.body;
+    if (!preferences || typeof preferences !== 'object' || Array.isArray(preferences)) {
+      return res.status(400).json({ error: 'Formato de preferencias invalido' });
+    }
+
+    const user = await User.findByPk(req.user.id);
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    const current = (user.preferences && typeof user.preferences === 'object') ? user.preferences : {};
+    const merged = { ...current, ...preferences };
+
+    // Limite simple para evitar payloads enormes.
+    if (JSON.stringify(merged).length > 8000) {
+      return res.status(400).json({ error: 'Preferencias demasiado grandes' });
+    }
+
+    user.preferences = merged;
+    await user.save();
+
+    res.json({
+      message: 'Preferencias actualizadas',
+      preferences: user.preferences
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error actualizando preferencias' });
   }
 };

@@ -21,8 +21,8 @@ import { syncDatabase } from './models/index.js';
 // Cargar variables de entorno
 dotenv.config();
 
-// Sincronizar BD
-syncDatabase();
+// Sincronizar BD y esperar antes de procesar solicitudes
+const dbReadyPromise = syncDatabase();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -37,6 +37,15 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(passport.initialize());
+
+app.use(async (req, res, next) => {
+  try {
+    await dbReadyPromise;
+    next();
+  } catch {
+    res.status(500).json({ error: 'Base de datos no disponible' });
+  }
+});
 
 // Logging básico
 app.use((req, res, next) => {

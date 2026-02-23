@@ -1,6 +1,6 @@
 import express from 'express';
 import crypto from 'crypto';
-import { register, login, verifyEmail, verifyEmailGet, requestPasswordReset, resetPassword, verify2FA, resendVerificationEmail, setup2FA, verify2FASetup, disable2FA, getMe } from '../controllers/authController.js';
+import { register, login, verifyEmail, verifyEmailGet, requestPasswordReset, resetPassword, verify2FA, resendVerificationEmail, setup2FA, verify2FASetup, disable2FA, getMe, updatePreferences } from '../controllers/authController.js';
 import authMiddleware from '../middleware/auth.js';
 import passport from '../config/passport.js';
 import jwt from 'jsonwebtoken';
@@ -83,6 +83,7 @@ router.post('/2fa/disable', authMiddleware, disable2FA);
 
 // User info
 router.get('/me', authMiddleware, getMe);
+router.put('/preferences', authMiddleware, updatePreferences);
 
 // CSRF token (double-submit cookie)
 router.get('/csrf-token', (req, res) => {

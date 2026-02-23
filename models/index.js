@@ -3,7 +3,7 @@ import Conversation from './Conversation.js';
 import Message from './Message.js';
 import sequelize from '../database/connection.js';
 
-// Relaciones
+// Relations
 User.hasMany(Conversation, { foreignKey: 'userId', onDelete: 'CASCADE' });
 Conversation.belongsTo(User, { foreignKey: 'userId' });
 
@@ -13,9 +13,10 @@ Message.belongsTo(Conversation, { foreignKey: 'conversationId' });
 const syncDatabase = async () => {
   try {
     await sequelize.sync({ alter: true });
-    console.log('📦 Base de datos sincronizada');
+    console.log('Database synced');
   } catch (error) {
-    console.error('❌ Error sincronizando base de datos:', error);
+    console.error('Error syncing database:', error);
+    throw error;
   }
 };
 
