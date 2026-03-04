@@ -26,6 +26,9 @@ const MODE_PROMPTS = {
 
 const MAX_MESSAGE_LENGTH = Number(process.env.MAX_MESSAGE_LENGTH || 1200);
 const ALLOW_PUBLIC_CHAT = String(process.env.ALLOW_PUBLIC_CHAT || 'false') === 'true';
+const MAX_REPLY_WORDS = Number(process.env.MAX_REPLY_WORDS || 260);
+const MAX_REPLY_CHARS = Number(process.env.MAX_REPLY_CHARS || 2200);
+const MAX_REPLY_BULLETS = Number(process.env.MAX_REPLY_BULLETS || 5);
 
 /**
  * Carga un prompt desde archivo
@@ -94,6 +97,134 @@ function simpleReply(message, mode) {
   if (m.includes('energ')) return 'Para mejorar la energía, prueba 1) hidratación, 2) snack con proteína y fruta, 3) pausas activas breves.';
   const bank = suggestions[mode] || suggestions.guia;
   return bank[Math.floor(Math.random() * bank.length)];
+}
+
+function countWords(text) {
+  return String(text || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .length;
+}
+
+function clipWords(text, maxWords) {
+  const words = String(text || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length <= maxWords) return words.join(' ');
+  return `${words.slice(0, maxWords).join(' ')}...`;
+}
+
+function defaultBullets(mode = 'guia') {
+  const bank = {
+    guia: [
+      'Elige un solo habito objetivo para esta semana.',
+      'Define una accion pequena que puedas cumplir hoy.',
+      'Registra tu avance diario en una frase breve.',
+    ],
+    chef: [
+      'Arma un desayuno simple con proteina y fruta.',
+      'Prepara una colacion saludable para la escuela.',
+      'Ajusta una comida del dia sin cambiar todo de golpe.',
+    ],
+    coach: [
+      'Programa 10 a 20 minutos de movimiento hoy.',
+      'Elige una actividad facil de repetir esta semana.',
+      'Vincula el habito a un horario fijo de tu rutina.',
+    ],
+    descanso: [
+      'Define una hora objetivo para empezar tu rutina nocturna.',
+      'Reduce pantallas 20 minutos antes de dormir.',
+      'Prepara una rutina corta y repetible para cerrar el dia.',
+    ],
+  };
+  return (bank[mode] || bank.guia).slice(0, MAX_REPLY_BULLETS);
+}
+
+function defaultNextStepQuestion(mode = 'guia') {
+  const bank = {
+    guia: '¿Quieres que lo convierta en un plan semanal con horario realista?',
+    chef: '¿Quieres que te proponga un menu base para manana con lo que sueles comer?',
+    coach: '¿A que hora exacta te acomoda hacer tu primer bloque de movimiento?',
+    descanso: '¿Te parece si definimos ahora tu rutina nocturna de hoy en 3 pasos?',
+  };
+  return bank[mode] || bank.guia;
+}
+
+function buildStructuredReply(sourceText, mode = 'guia') {
+  const clean = String(sourceText || '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/\u0000/g, '')
+    .trim();
+  const summary = clipWords(clean.replace(/\n+/g, ' '), 80) || 'Vamos a ordenarlo en pasos simples para avanzar desde hoy.';
+  const bullets = defaultBullets(mode).map((item) => `- ${item}`).join('\n');
+  const question = defaultNextStepQuestion(mode);
+
+  return [
+    '### Resumen rapido',
+    summary,
+    '',
+    '### Recomendaciones',
+    bullets,
+    '',
+    '### Siguiente paso',
+    question,
+  ].join('\n');
+}
+
+function limitBullets(text) {
+  let seen = 0;
+  return String(text || '')
+    .split('\n')
+    .filter((line) => {
+      if (!/^\s*-\s+/.test(line)) return true;
+      seen += 1;
+      return seen <= MAX_REPLY_BULLETS;
+    })
+    .join('\n');
+}
+
+function normalizeWhitespace(text) {
+  return String(text || '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+export function normalizeAssistantReply(rawText, mode = 'guia') {
+  let normalized = normalizeWhitespace(String(rawText || '').replace(/^\s*[•*]\s+/gm, '- '));
+
+  if (!normalized) {
+    return buildStructuredReply('', mode);
+  }
+
+  if (normalized.length > MAX_REPLY_CHARS) {
+    normalized = normalized.slice(0, MAX_REPLY_CHARS).trim();
+  }
+
+  const hasSummary = /(^|\n)\s*###\s*Resumen/i.test(normalized);
+  const hasRecommendations = /(^|\n)\s*###\s*Recomendaciones/i.test(normalized);
+  const hasNextStep = /(^|\n)\s*###\s*Siguiente\s+paso/i.test(normalized);
+  const hasBullets = /(^|\n)\s*-\s+/.test(normalized);
+
+  if (!hasSummary || !hasRecommendations || !hasNextStep || !hasBullets) {
+    return buildStructuredReply(normalized, mode);
+  }
+
+  normalized = limitBullets(normalized);
+  normalized = normalizeWhitespace(normalized);
+
+  if (!/(^|\n)\s*-\s+/.test(normalized)) {
+    return buildStructuredReply(normalized, mode);
+  }
+
+  if (countWords(normalized) > MAX_REPLY_WORDS) {
+    return buildStructuredReply(normalized, mode);
+  }
+
+  return normalized;
 }
 
 /**
@@ -303,6 +434,7 @@ router.post('/chat', authMiddleware, async (req, res) => {
     } else {
       botReply = simpleReply(message, selectedMode);
     }
+    botReply = normalizeAssistantReply(botReply, selectedMode);
 
     // Guardar respuesta del asistente
     await Message.create({
@@ -350,6 +482,7 @@ router.post('/chat', authMiddleware, async (req, res) => {
     res.json({
       text: botReply, // Mantener compatibilidad con frontend actual
       content: botReply,
+      format: 'markdown',
       mode: selectedMode,
       conversationId: conversation.id,
       timestamp: new Date().toISOString()
@@ -478,10 +611,18 @@ router.post('/chat/public', async (req, res) => {
     } else {
       botReply = simpleReply(message, selectedMode);
     }
+    botReply = normalizeAssistantReply(botReply, selectedMode);
     await Message.create({ conversationId: conversation.id, role: 'assistant', content: botReply });
     await conversation.changed('updatedAt', true);
     await conversation.save();
-    res.json({ text: botReply, content: botReply, mode: selectedMode, conversationId: conversation.id, timestamp: new Date().toISOString() });
+    res.json({
+      text: botReply,
+      content: botReply,
+      format: 'markdown',
+      mode: selectedMode,
+      conversationId: conversation.id,
+      timestamp: new Date().toISOString()
+    });
   } catch (error) {
     console.error('Error en /api/chat/public:', error.response?.data || error.message);
     res.status(500).json({ error: 'Error al procesar el mensaje.' });
