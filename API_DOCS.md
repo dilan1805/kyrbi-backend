@@ -1,15 +1,16 @@
-# API Docs · Kyrbi Backend
+﻿# API Docs - Kyrbi Backend
 
 Base URL local: `http://localhost:3000`  
 Base path API: `/api`
 
 ## Resumen
-Kyrbi expone autenticación, chat con persistencia, configuración de usuario y métricas públicas.
+Kyrbi expone autenticacion, chat con persistencia, configuracion de usuario y metricas publicas.
 
-## Autenticación
+## Autenticacion
 
 ### POST `/api/auth/register`
-Registra usuario con correo y contraseña.
+Registra usuario con correo y contrasena.
+Se aceptan correos institucionales internos y con dominio completo (ejemplos: `user@irk`, `user@irk.mx`).
 
 Body:
 ```json
@@ -20,21 +21,9 @@ Body:
 }
 ```
 
-Response:
-```json
-{
-  "message": "Usuario registrado exitosamente. Verifica tu correo.",
-  "user": {
-    "id": "uuid",
-    "username": "usuario_demo",
-    "email": "usuario@ejemplo.com"
-  },
-  "token": "jwt"
-}
-```
-
 ### POST `/api/auth/login`
-Inicia sesión con correo y contraseña.
+Inicia sesion con correo y contrasena.
+El login usa el mismo validador de correo que registro para evitar inconsistencias.
 
 Body:
 ```json
@@ -75,12 +64,12 @@ Body:
 ## Chat autenticado
 
 ### POST `/api/chat`
-Envía mensaje al asistente (requiere JWT).
+Envia mensaje al asistente (requiere JWT).
 
 Body:
 ```json
 {
-  "message": "Quiero mejorar mi energía en clases",
+  "message": "Quiero mejorar mi energia en clases",
   "mode": "guia",
   "conversationId": "uuid-opcional"
 }
@@ -90,27 +79,27 @@ Body:
 Lista conversaciones del usuario autenticado.
 
 ### GET `/api/chat/history/:id`
-Obtiene detalle y mensajes de una conversación.
+Obtiene detalle y mensajes de una conversacion.
 
 ### PATCH `/api/chat/history/:id`
-Renombra una conversación.
+Renombra una conversacion.
 
 Body:
 ```json
 {
-  "title": "Plan de hábitos semanales"
+  "title": "Plan de habitos semanales"
 }
 ```
 
 ### DELETE `/api/chat/history/:id`
-Elimina una conversación y sus mensajes.
+Elimina una conversacion y sus mensajes.
 
 ### GET `/api/chat/memory/:id`
-Obtiene resumen de memoria persistente de una conversación.
+Obtiene resumen de memoria persistente de una conversacion.
 
-## Chat público (controlado por variable de entorno)
+## Chat publico (controlado por variable de entorno)
 
-Los endpoints públicos están deshabilitados por defecto.
+Los endpoints publicos estan deshabilitados por defecto.
 
 - `GET /api/chat/public/history`
 - `GET /api/chat/public/history/:id`
@@ -121,34 +110,13 @@ Para habilitar:
 ALLOW_PUBLIC_CHAT=true
 ```
 
-## Métricas y salud
+## Metricas y salud
 
 ### GET `/health`
-Estado básico del backend.
+Estado basico del backend.
 
 ### GET `/api/meta`
-Métricas públicas de plataforma.
-
-Ejemplo:
-```json
-{
-  "product": {
-    "name": "Kyrbi",
-    "tier": "Business",
-    "environment": "production"
-  },
-  "metrics": {
-    "registeredUsers": 120,
-    "totalConversations": 985,
-    "uptime": "5d 8h",
-    "sla": "99.5%"
-  },
-  "release": {
-    "version": "1.0.0",
-    "date": "2026-03-03"
-  }
-}
-```
+Metricas publicas de plataforma.
 
 ## Variables de entorno relevantes
 
@@ -157,6 +125,9 @@ ALLOW_PUBLIC_CHAT=false
 MAX_MESSAGE_LENGTH=1200
 APP_VERSION=1.0.0
 RELEASE_DATE=2026-03-03
+SQLITE_STORAGE=./database/kyrbi.sqlite
+# Alternativa:
+# DATABASE_URL=sqlite:./database/kyrbi.sqlite
 ```
 
 ## Pruebas

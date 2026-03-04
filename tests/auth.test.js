@@ -74,6 +74,29 @@ describe('Auth Endpoints', () => {
     expect(loginRes.body).toHaveProperty('token');
   });
 
+  it('should allow institutional emails with domain suffix (ej. usuario@irk.mx)', async () => {
+    const institutionalUserMx = {
+      username: 'inst_user_mx',
+      email: 'inst.user@irk.mx',
+      password: 'Password123!',
+    };
+
+    const registerRes = await request(app)
+      .post('/api/auth/register')
+      .send(institutionalUserMx);
+    expect(registerRes.statusCode).toEqual(201);
+
+    const loginRes = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: 'INST.USER@IRK.MX',
+        password: institutionalUserMx.password,
+      });
+
+    expect(loginRes.statusCode).toEqual(200);
+    expect(loginRes.body).toHaveProperty('token');
+  });
+
   it('should return 401 (not 500) for social account without password', async () => {
     await User.create({
       username: 'social_only_user',
