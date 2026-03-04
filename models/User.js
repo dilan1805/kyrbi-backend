@@ -1,6 +1,7 @@
 import { DataTypes } from 'sequelize';
 import sequelize from '../database/connection.js';
 import bcrypt from 'bcryptjs';
+import { isAcceptedEmail } from '../utils/email.js';
 
 const User = sequelize.define('User', {
   id: {
@@ -18,7 +19,11 @@ const User = sequelize.define('User', {
     allowNull: false,
     unique: true,
     validate: {
-      isEmail: true,
+      isInstitutionalEmail(value) {
+        if (!isAcceptedEmail(value)) {
+          throw new Error('Correo electronico invalido');
+        }
+      },
     },
   },
   password: {

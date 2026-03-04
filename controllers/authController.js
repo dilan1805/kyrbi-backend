@@ -5,6 +5,7 @@ import nodemailer from 'nodemailer';
 import speakeasy from 'speakeasy';
 import QRCode from 'qrcode';
 import authMiddleware from '../middleware/auth.js';
+import { isAcceptedEmail, normalizeEmail } from '../utils/email.js';
 
 const SECRET = process.env.JWT_SECRET || 'secreto_super_seguro_kyrbi';
 const backendURL = process.env.PUBLIC_BACKEND_URL || `http://localhost:${process.env.PORT || 3000}`;
@@ -28,12 +29,15 @@ const sendMail = async (to, subject, html) => {
 export const register = async (req, res) => {
   try {
     const username = String(req.body?.username || '').trim();
-    const email = String(req.body?.email || '').trim().toLowerCase();
+    const email = normalizeEmail(req.body?.email);
     const password = String(req.body?.password || '');
     const { captchaToken } = req.body;
     
     if (!username || !email || !password) {
       return res.status(400).json({ error: 'Completa username, email y password.' });
+    }
+    if (!isAcceptedEmail(email)) {
+      return res.status(400).json({ error: 'Ingresa un correo valido (se aceptan correos institucionales).' });
     }
     if (username.length < 3) {
       return res.status(400).json({ error: 'El nombre de usuario debe tener al menos 3 caracteres.' });
@@ -109,12 +113,15 @@ export const register = async (req, res) => {
 
 export const login = async (req, res) => {
   try {
-    const email = String(req.body?.email || '').trim().toLowerCase();
+    const email = normalizeEmail(req.body?.email);
     const password = String(req.body?.password || '');
     const { captchaToken } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ error: 'Completa email y contrasena.' });
+    }
+    if (!isAcceptedEmail(email)) {
+      return res.status(400).json({ error: 'Correo invalido.' });
     }
 
     const user = await User.findOne({ where: { email } });
@@ -217,7 +224,10 @@ export const verifyEmailGet = async (req, res) => {
 
 export const requestPasswordReset = async (req, res) => {
   try {
-    const { email } = req.body;
+    const email = normalizeEmail(req.body?.email);
+    if (!isAcceptedEmail(email)) {
+      return res.json({ message: 'Si el correo existe, se enviara un enlace' });
+    }
     const user = await User.findOne({ where: { email } });
     if (!user) return res.json({ message: 'Si el correo existe, se enviará un enlace' });
     user.resetPasswordToken = crypto.randomBytes(24).toString('hex');
@@ -262,9 +272,10 @@ export const resetPassword = async (req, res) => {
 
 export const verify2FA = async (req, res) => {
   try {
-    const email = String(req.body?.email || '').trim().toLowerCase();
+    const email = normalizeEmail(req.body?.email);
     const token = String(req.body?.token || '').trim();
     if (!email || !token) return res.status(400).json({ error: 'Email y token requeridos' });
+    if (!isAcceptedEmail(email)) return res.status(400).json({ error: 'Email invalido' });
     const user = await User.findOne({ where: { email } });
     if (!user) return res.status(401).json({ error: 'Usuario no encontrado' });
 
@@ -289,7 +300,10 @@ export const verify2FA = async (req, res) => {
 
 export const resendVerificationEmail = async (req, res) => {
     try {
-        const { email } = req.body;
+        const email = normalizeEmail(req.body?.email);
+        if (!isAcceptedEmail(email)) {
+            return res.status(400).json({ error: 'Correo invalido' });
+        }
         const user = await User.findOne({ where: { email } });
         if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
         if (user.emailVerified) return res.status(400).json({ error: 'El correo ya está verificado' });

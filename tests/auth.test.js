@@ -51,6 +51,29 @@ describe('Auth Endpoints', () => {
     expect(res.statusCode).toEqual(401);
   });
 
+  it('should allow institutional emails without TLD (ej. usuario@irk)', async () => {
+    const institutionalUser = {
+      username: 'inst_user',
+      email: 'inst.user@irk',
+      password: 'Password123!',
+    };
+
+    const registerRes = await request(app)
+      .post('/api/auth/register')
+      .send(institutionalUser);
+    expect(registerRes.statusCode).toEqual(201);
+
+    const loginRes = await request(app)
+      .post('/api/auth/login')
+      .send({
+        email: institutionalUser.email,
+        password: institutionalUser.password,
+      });
+
+    expect(loginRes.statusCode).toEqual(200);
+    expect(loginRes.body).toHaveProperty('token');
+  });
+
   it('should return 401 (not 500) for social account without password', async () => {
     await User.create({
       username: 'social_only_user',
