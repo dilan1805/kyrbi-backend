@@ -1,169 +1,166 @@
-# Documentación de la API de Kyrbi
+# API Docs · Kyrbi Backend
 
-Esta API proporciona servicios de autenticación, gestión de usuarios y funcionalidades de la aplicación Kyrbi.
+Base URL local: `http://localhost:3000`  
+Base path API: `/api`
 
-## Base URL
-`/api`
+## Resumen
+Kyrbi expone autenticación, chat con persistencia, configuración de usuario y métricas públicas.
 
 ## Autenticación
 
-### Registro
-Crea un nuevo usuario.
+### POST `/api/auth/register`
+Registra usuario con correo y contraseña.
 
-- **URL:** `/auth/register`
-- **Método:** `POST`
-- **Body:**
-  ```json
-  {
-    "username": "usuario123",
-    "email": "usuario@ejemplo.com",
-    "password": "Password123!"
-  }
-  ```
-- **Respuesta Exitosa (201):**
-  ```json
-  {
-    "message": "Usuario registrado exitosamente. Por favor verifica tu correo electrónico."
-  }
-  ```
+Body:
+```json
+{
+  "username": "usuario_demo",
+  "email": "usuario@ejemplo.com",
+  "password": "Password123!"
+}
+```
 
-### Login
-Inicia sesión con credenciales.
+Response:
+```json
+{
+  "message": "Usuario registrado exitosamente. Verifica tu correo.",
+  "user": {
+    "id": "uuid",
+    "username": "usuario_demo",
+    "email": "usuario@ejemplo.com"
+  },
+  "token": "jwt"
+}
+```
 
-- **URL:** `/auth/login`
-- **Método:** `POST`
-- **Body:**
-  ```json
-  {
-    "email": "usuario@ejemplo.com",
-    "password": "Password123!"
-  }
-  ```
-- **Respuesta Exitosa (200) - Sin 2FA:**
-  ```json
-  {
-    "message": "Login exitoso",
-    "token": "eyJhbGciOiJIUzI1NiIsInR5c...",
-    "user": {
-      "id": 1,
-      "username": "usuario123",
-      "email": "usuario@ejemplo.com",
-      "twoFactorEnabled": false
+### POST `/api/auth/login`
+Inicia sesión con correo y contraseña.
+
+Body:
+```json
+{
+  "email": "usuario@ejemplo.com",
+  "password": "Password123!"
+}
+```
+
+### GET `/api/auth/me`
+Obtiene perfil del usuario autenticado.  
+Header: `Authorization: Bearer <token>`
+
+### PUT `/api/auth/preferences`
+Actualiza preferencias del usuario autenticado.  
+Header: `Authorization: Bearer <token>`
+
+Body:
+```json
+{
+  "preferences": {
+    "chatSettings": {
+      "autoSave": true,
+      "defaultMode": "general",
+      "theme": "system"
     }
   }
-  ```
-- **Respuesta Exitosa (200) - Con 2FA Activo:**
-  ```json
-  {
-    "message": "2FA requerido",
-    "require2FA": true,
-    "email": "usuario@ejemplo.com"
+}
+```
+
+### OAuth social
+- `GET /api/auth/google`
+- `GET /api/auth/facebook`
+- `GET /api/auth/github`
+- `GET /api/auth/microsoft`
+- `GET /api/auth/providers` (estado de proveedores habilitados)
+
+## Chat autenticado
+
+### POST `/api/chat`
+Envía mensaje al asistente (requiere JWT).
+
+Body:
+```json
+{
+  "message": "Quiero mejorar mi energía en clases",
+  "mode": "guia",
+  "conversationId": "uuid-opcional"
+}
+```
+
+### GET `/api/chat/history`
+Lista conversaciones del usuario autenticado.
+
+### GET `/api/chat/history/:id`
+Obtiene detalle y mensajes de una conversación.
+
+### PATCH `/api/chat/history/:id`
+Renombra una conversación.
+
+Body:
+```json
+{
+  "title": "Plan de hábitos semanales"
+}
+```
+
+### DELETE `/api/chat/history/:id`
+Elimina una conversación y sus mensajes.
+
+### GET `/api/chat/memory/:id`
+Obtiene resumen de memoria persistente de una conversación.
+
+## Chat público (controlado por variable de entorno)
+
+Los endpoints públicos están deshabilitados por defecto.
+
+- `GET /api/chat/public/history`
+- `GET /api/chat/public/history/:id`
+- `POST /api/chat/public`
+
+Para habilitar:
+```env
+ALLOW_PUBLIC_CHAT=true
+```
+
+## Métricas y salud
+
+### GET `/health`
+Estado básico del backend.
+
+### GET `/api/meta`
+Métricas públicas de plataforma.
+
+Ejemplo:
+```json
+{
+  "product": {
+    "name": "Kyrbi",
+    "tier": "Business",
+    "environment": "production"
+  },
+  "metrics": {
+    "registeredUsers": 120,
+    "totalConversations": 985,
+    "uptime": "5d 8h",
+    "sla": "99.5%"
+  },
+  "release": {
+    "version": "1.0.0",
+    "date": "2026-03-03"
   }
-  ```
+}
+```
 
-### Verificar 2FA (Login)
-Completa el login cuando 2FA está activo.
+## Variables de entorno relevantes
 
-- **URL:** `/auth/login/verify-2fa`
-- **Método:** `POST`
-- **Body:**
-  ```json
-  {
-    "email": "usuario@ejemplo.com",
-    "token": "123456"
-  }
-  ```
-- **Respuesta Exitosa (200):** Devuelve token JWT igual que Login normal.
+```env
+ALLOW_PUBLIC_CHAT=false
+MAX_MESSAGE_LENGTH=1200
+APP_VERSION=1.0.0
+RELEASE_DATE=2026-03-03
+```
 
-### Perfil de Usuario
-Obtiene información del usuario autenticado.
+## Pruebas
 
-- **URL:** `/auth/me`
-- **Método:** `GET`
-- **Headers:** `Authorization: Bearer <token>`
-- **Respuesta Exitosa (200):**
-  ```json
-  {
-    "id": 1,
-    "username": "usuario123",
-    "email": "usuario@ejemplo.com",
-    "twoFactorEnabled": true,
-    "emailVerified": true,
-    "preferences": {}
-  }
-  ```
-
-## Gestión de 2FA
-
-Requiere Header `Authorization: Bearer <token>`.
-
-### Iniciar Configuración 2FA
-Genera un secreto y código QR para configurar TOTP.
-
-- **URL:** `/auth/2fa/setup`
-- **Método:** `POST`
-- **Respuesta Exitosa (200):**
-  ```json
-  {
-    "secret": "JBSWY3DPEHPK3PXP...",
-    "qrCode": "data:image/png;base64,..."
-  }
-  ```
-
-### Verificar Configuración 2FA
-Confirma el código TOTP y activa 2FA para el usuario.
-
-- **URL:** `/auth/2fa/verify-setup`
-- **Método:** `POST`
-- **Body:**
-  ```json
-  {
-    "token": "123456"
-  }
-  ```
-
-### Desactivar 2FA
-Desactiva la autenticación de dos factores.
-
-- **URL:** `/auth/2fa/disable`
-- **Método:** `POST`
-- **Body:**
-  ```json
-  {
-    "token": "123456" // Código actual para confirmar (seguridad)
-  }
-  ```
-
-## Recuperación de Contraseña
-
-### Solicitar Reset
-Envía un correo con el link de recuperación.
-
-- **URL:** `/auth/password/reset/request`
-- **Método:** `POST`
-- **Body:** `{ "email": "usuario@ejemplo.com" }`
-
-### Confirmar Reset
-Establece la nueva contraseña usando el token recibido.
-
-- **URL:** `/auth/password/reset/confirm`
-- **Método:** `POST`
-- **Body:**
-  ```json
-  {
-    "token": "token_recibido_por_email",
-    "password": "NuevaPassword123!"
-  }
-  ```
-
-## Login Social
-
-- **Google:** `/api/auth/google`
-- **GitHub:** `/api/auth/github`
-- **Microsoft:** `/api/auth/microsoft`
-
-Los callbacks redirigen al frontend con el token en la URL (ej: `/login.html?token=...`).
-
-## Notas de Desarrollo
-- **Tests:** Ejecutar `npm test` para correr la suite de pruebas (Jest + Supertest).
-- **Base de Datos:** SQLite (archivo `kyrbi.sqlite` en dev/prod, `:memory:` en tests).
+```bash
+npm test
+```

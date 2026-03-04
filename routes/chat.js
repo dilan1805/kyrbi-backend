@@ -1,4 +1,4 @@
-/* ==========================================================================
+﻿/* ==========================================================================
    Ruta de chat para el asistente Kyrbi (Con Persistencia y Auth)
    Endpoint: POST /api/chat
    ========================================================================== */
@@ -23,6 +23,9 @@ const MODE_PROMPTS = {
   coach: 'coach.txt',
   descanso: 'descanso.txt',
 };
+
+const MAX_MESSAGE_LENGTH = Number(process.env.MAX_MESSAGE_LENGTH || 1200);
+const ALLOW_PUBLIC_CHAT = String(process.env.ALLOW_PUBLIC_CHAT || 'false') === 'true';
 
 /**
  * Carga un prompt desde archivo
@@ -144,6 +147,68 @@ router.get('/chat/history/:id', authMiddleware, async (req, res) => {
 });
 
 /**
+ * PATCH /api/chat/history/:id
+ * Renombra o actualiza metadatos de una conversación
+ */
+router.patch('/chat/history/:id', authMiddleware, async (req, res) => {
+  try {
+    const conversation = await Conversation.findOne({
+      where: {
+        id: req.params.id,
+        userId: req.user.id
+      }
+    });
+
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversación no encontrada' });
+    }
+
+    const title = String(req.body?.title || '').trim();
+    if (!title) {
+      return res.status(400).json({ error: 'title requerido' });
+    }
+
+    conversation.title = title.slice(0, 120);
+    await conversation.save();
+
+    res.json({
+      id: conversation.id,
+      title: conversation.title,
+      updatedAt: conversation.updatedAt
+    });
+  } catch (error) {
+    console.error('Error actualizando conversación:', error);
+    res.status(500).json({ error: 'Error actualizando conversación' });
+  }
+});
+
+/**
+ * DELETE /api/chat/history/:id
+ * Elimina una conversación del usuario
+ */
+router.delete('/chat/history/:id', authMiddleware, async (req, res) => {
+  try {
+    const conversation = await Conversation.findOne({
+      where: {
+        id: req.params.id,
+        userId: req.user.id
+      }
+    });
+
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversación no encontrada' });
+    }
+
+    await Message.destroy({ where: { conversationId: conversation.id } });
+    await conversation.destroy();
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Error eliminando conversación:', error);
+    res.status(500).json({ error: 'Error eliminando conversación' });
+  }
+});
+
+/**
  * POST /api/chat
  * Envía un mensaje y obtiene respuesta de la IA
  */
@@ -153,6 +218,9 @@ router.post('/chat', authMiddleware, async (req, res) => {
   // Validaciones
   if (!message || typeof message !== 'string' || !message.trim()) {
     return res.status(400).json({ error: 'Mensaje no válido.' });
+  }
+  if (message.trim().length > MAX_MESSAGE_LENGTH) {
+    return res.status(400).json({ error: `Mensaje demasiado largo. Máximo ${MAX_MESSAGE_LENGTH} caracteres.` });
   }
 
   try {
@@ -313,6 +381,9 @@ router.get('/chat/memory/:id', authMiddleware, async (req, res) => {
 });
 
 router.get('/chat/public/history', async (req, res) => {
+  if (!ALLOW_PUBLIC_CHAT) {
+    return res.status(403).json({ error: 'chat_public_deshabilitado' });
+  }
   try {
     const { sessionId } = req.query;
     if (!sessionId) return res.status(400).json({ error: 'sessionId requerido' });
@@ -329,6 +400,9 @@ router.get('/chat/public/history', async (req, res) => {
 });
 
 router.get('/chat/public/history/:id', async (req, res) => {
+  if (!ALLOW_PUBLIC_CHAT) {
+    return res.status(403).json({ error: 'chat_public_deshabilitado' });
+  }
   try {
     const { sessionId } = req.query;
     if (!sessionId) return res.status(400).json({ error: 'sessionId requerido' });
@@ -345,9 +419,15 @@ router.get('/chat/public/history/:id', async (req, res) => {
 });
 
 router.post('/chat/public', async (req, res) => {
+  if (!ALLOW_PUBLIC_CHAT) {
+    return res.status(403).json({ error: 'chat_public_deshabilitado' });
+  }
   const { message, mode = 'guia', conversationId, sessionId } = req.body;
   if (!message || typeof message !== 'string' || !message.trim()) {
     return res.status(400).json({ error: 'Mensaje no válido.' });
+  }
+  if (message.trim().length > MAX_MESSAGE_LENGTH) {
+    return res.status(400).json({ error: `Mensaje demasiado largo. Máximo ${MAX_MESSAGE_LENGTH} caracteres.` });
   }
   if (!sessionId) {
     return res.status(400).json({ error: 'sessionId requerido.' });

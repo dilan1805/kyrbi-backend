@@ -1,4 +1,4 @@
-import passport from 'passport';
+﻿import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as GitHubStrategy } from 'passport-github2';
 import { Strategy as MicrosoftStrategy } from 'passport-microsoft';
@@ -25,105 +25,181 @@ passport.deserializeUser(async (id, done) => {
   }
 });
 
+const providerAlias = (providerField) => String(providerField || '').replace(/Id$/i, '').toLowerCase() || 'social';
+
+const normalizeUsername = (value, fallback = 'kyrbi_user') => {
+  const raw = String(value || '').trim();
+  const normalized = raw
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9._-]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return (normalized || fallback).slice(0, 32);
+};
+
+const ensureUniqueUsername = async (baseUsername) => {
+  const cleanBase = normalizeUsername(baseUsername);
+  let candidate = cleanBase;
+  let suffix = 0;
+
+  while (await User.findOne({ where: { username: candidate } })) {
+    suffix += 1;
+    candidate = `${cleanBase.slice(0, 26)}_${suffix}`;
+    if (suffix > 99) break;
+  }
+
+  return candidate;
+};
+
+const ensureUniqueEmail = async (baseEmail, providerField, profileId) => {
+  const alias = providerAlias(providerField);
+  let candidate = String(baseEmail || '').trim().toLowerCase();
+
+  if (!candidate) {
+    candidate = `${alias}_${String(profileId || Date.now())}@social.kyrbi.local`;
+  }
+
+  let suffix = 0;
+  while (await User.findOne({ where: { email: candidate } })) {
+    suffix += 1;
+    const [localPart, domain = 'social.kyrbi.local'] = candidate.split('@');
+    const safeLocal = localPart.replace(/_\d+$/, '');
+    candidate = `${safeLocal}_${suffix}@${domain}`;
+    if (suffix > 99) break;
+  }
+
+  return candidate;
+};
+
 const handleAuth = async (req, accessToken, refreshToken, profile, done, providerField) => {
   try {
-    // 1. Check if social account is already linked
-    let user = await User.findOne({ where: { [providerField]: profile.id } });
+    const profileId = String(profile?.id || '').trim();
+    if (!profileId) {
+      return done(null, false, { message: 'No se pudo identificar el perfil social.' });
+    }
 
-    // 2. Check if user is already logged in (Linking account)
+    // 1) Social account already linked
+    let user = await User.findOne({ where: { [providerField]: profileId } });
+
+    // 2) Account linking when user is already logged in
     if (req.query.state) {
       try {
         const decoded = jwt.verify(req.query.state, SECRET);
         const loggedUser = await User.findByPk(decoded.id);
-        
+
         if (loggedUser) {
           if (user) {
-             if (user.id === loggedUser.id) {
-               return done(null, loggedUser); // Already linked to this user
-             } else {
-               return done(null, false, { message: 'Esta cuenta social ya está vinculada a otro usuario.' });
-             }
-          } else {
-            // Link to current user
-            loggedUser[providerField] = profile.id;
-            await loggedUser.save();
-            return done(null, loggedUser);
+            if (user.id === loggedUser.id) {
+              return done(null, loggedUser);
+            }
+            return done(null, false, { message: 'Esta cuenta social ya esta vinculada a otro usuario.' });
           }
+
+          loggedUser[providerField] = profileId;
+          await loggedUser.save();
+          return done(null, loggedUser);
         }
-      } catch (err) {
-        // Invalid token in state, proceed as normal login
+      } catch {
+        // Invalid state token: continue as normal login
       }
     }
 
-    // 3. Normal Login/Register
+    // 3) Normal social login
     if (user) return done(null, user);
 
-    // 4. Check by email
-    const email = profile.emails?.[0]?.value;
-    if (email) {
-      user = await User.findOne({ where: { email } });
+    // 4) Match by email (if provider returns one)
+    const incomingEmail = String(profile.emails?.[0]?.value || '').trim().toLowerCase();
+    if (incomingEmail) {
+      user = await User.findOne({ where: { email: incomingEmail } });
       if (user) {
-        user[providerField] = profile.id;
+        user[providerField] = profileId;
         await user.save();
         return done(null, user);
       }
     }
 
-    // 5. Create new user
+    // 5) Create user safely (avoid username/email collisions)
+    const alias = providerAlias(providerField);
+    const usernameBase = normalizeUsername(
+      profile.displayName || profile.username || `${alias}_${profileId}`,
+      `${alias}_${profileId}`
+    );
+
+    const safeUsername = await ensureUniqueUsername(usernameBase);
+    const safeEmail = await ensureUniqueEmail(incomingEmail, providerField, profileId);
+
     user = await User.create({
-      username: profile.displayName || profile.username || `${providerField.replace('Id', '')}_${profile.id}`,
-      email: email || `${providerField.replace('Id', '')}_${profile.id}@placeholder.com`,
-      [providerField]: profile.id,
+      username: safeUsername,
+      email: safeEmail,
+      [providerField]: profileId,
       emailVerified: true,
-      password: null
+      password: null,
     });
+
     done(null, user);
   } catch (error) {
+    console.error('OAuth handleAuth error:', providerField, error?.message || error);
     done(error, null);
   }
 };
 
-// Google Strategy
 if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-  passport.use(new GoogleStrategy({
-    clientID: process.env.GOOGLE_CLIENT_ID,
-    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    callbackURL: `${backendURL}/api/auth/google/callback`,
-    passReqToCallback: true
-  }, (req, token, refreshToken, profile, done) => handleAuth(req, token, refreshToken, profile, done, 'googleId')));
+  passport.use(
+    new GoogleStrategy(
+      {
+        clientID: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+        callbackURL: `${backendURL}/api/auth/google/callback`,
+        passReqToCallback: true,
+      },
+      (req, token, refreshToken, profile, done) => handleAuth(req, token, refreshToken, profile, done, 'googleId')
+    )
+  );
 }
 
-// GitHub Strategy
 if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
-  passport.use(new GitHubStrategy({
-    clientID: process.env.GITHUB_CLIENT_ID,
-    clientSecret: process.env.GITHUB_CLIENT_SECRET,
-    callbackURL: `${backendURL}/api/auth/github/callback`,
-    scope: ['user:email'],
-    passReqToCallback: true
-  }, (req, token, refreshToken, profile, done) => handleAuth(req, token, refreshToken, profile, done, 'githubId')));
+  passport.use(
+    new GitHubStrategy(
+      {
+        clientID: process.env.GITHUB_CLIENT_ID,
+        clientSecret: process.env.GITHUB_CLIENT_SECRET,
+        callbackURL: `${backendURL}/api/auth/github/callback`,
+        scope: ['user:email'],
+        passReqToCallback: true,
+      },
+      (req, token, refreshToken, profile, done) => handleAuth(req, token, refreshToken, profile, done, 'githubId')
+    )
+  );
 }
 
-// Microsoft Strategy
 if (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET) {
-    passport.use(new MicrosoftStrategy({
+  passport.use(
+    new MicrosoftStrategy(
+      {
         clientID: process.env.MICROSOFT_CLIENT_ID,
         clientSecret: process.env.MICROSOFT_CLIENT_SECRET,
         callbackURL: `${backendURL}/api/auth/microsoft/callback`,
         scope: ['user.read'],
-        passReqToCallback: true
-    }, (req, token, refreshToken, profile, done) => handleAuth(req, token, refreshToken, profile, done, 'microsoftId')));
+        passReqToCallback: true,
+      },
+      (req, token, refreshToken, profile, done) => handleAuth(req, token, refreshToken, profile, done, 'microsoftId')
+    )
+  );
 }
 
-// Facebook Strategy
 if (process.env.FACEBOOK_APP_ID && process.env.FACEBOOK_APP_SECRET) {
-  passport.use(new FacebookStrategy({
-    clientID: process.env.FACEBOOK_APP_ID,
-    clientSecret: process.env.FACEBOOK_APP_SECRET,
-    callbackURL: `${backendURL}/api/auth/facebook/callback`,
-    profileFields: ['id', 'emails', 'name'],
-    passReqToCallback: true
-  }, (req, token, refreshToken, profile, done) => handleAuth(req, token, refreshToken, profile, done, 'facebookId')));
+  passport.use(
+    new FacebookStrategy(
+      {
+        clientID: process.env.FACEBOOK_APP_ID,
+        clientSecret: process.env.FACEBOOK_APP_SECRET,
+        callbackURL: `${backendURL}/api/auth/facebook/callback`,
+        profileFields: ['id', 'emails', 'name'],
+        passReqToCallback: true,
+      },
+      (req, token, refreshToken, profile, done) => handleAuth(req, token, refreshToken, profile, done, 'facebookId')
+    )
+  );
 }
 
 export default passport;

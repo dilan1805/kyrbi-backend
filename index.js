@@ -1,4 +1,4 @@
-/* ==========================================================================
+﻿/* ==========================================================================
    Backend para Ciencias para vivir mejor - Asistente Kyrbi
    Servidor Express con integración de IA real
    ========================================================================== */
@@ -16,7 +16,7 @@ import { readFileSync } from 'fs';
 import chatRouter from './routes/chat.js';
 import authRouter from './routes/auth.js';
 import adminRouter from './routes/admin.js';
-import { syncDatabase } from './models/index.js';
+import { syncDatabase, User, Conversation } from './models/index.js';
 
 // Cargar variables de entorno
 dotenv.config();
@@ -185,6 +185,41 @@ console.log(`📂 Sirviendo frontend desde: ${frontendPath}`);
 // Ruta de salud
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', message: 'Servidor Kyrbi funcionando' });
+});
+
+app.get('/api/meta', async (req, res) => {
+  try {
+    const [registeredUsers, totalConversations] = await Promise.all([
+      User.count(),
+      Conversation.count(),
+    ]);
+
+    const uptimeSeconds = process.uptime();
+    const uptimeDays = Math.floor(uptimeSeconds / 86400);
+    const uptimeHours = Math.floor((uptimeSeconds % 86400) / 3600);
+    const uptimeLabel = `${uptimeDays}d ${uptimeHours}h`;
+
+    res.json({
+      product: {
+        name: 'Kyrbi',
+        tier: 'Business',
+        environment: process.env.NODE_ENV || 'development',
+      },
+      metrics: {
+        registeredUsers,
+        totalConversations,
+        uptime: uptimeLabel,
+        sla: '99.5%',
+      },
+      release: {
+        version: process.env.APP_VERSION || '1.0.0',
+        date: process.env.RELEASE_DATE || new Date().toISOString().slice(0, 10),
+      },
+    });
+  } catch (error) {
+    console.error('Error en /api/meta:', error);
+    res.status(500).json({ error: 'meta_unavailable' });
+  }
 });
 
 // Manejo de errores

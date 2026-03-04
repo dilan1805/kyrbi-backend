@@ -47,21 +47,37 @@ const ensureOAuthReady = (strategyName, humanName, req, res) => {
 
 const socialCallback = (req, res) => {
   const user = req.user;
+  if (!user?.id) {
+    return res.redirect(oauthErrorRedirect('No se pudo completar la autenticacion social.'));
+  }
   const token = jwt.sign({ id: user.id, username: user.username }, SECRET, { expiresIn: '7d' });
   res.redirect(`${FRONTEND_URL}/login.html?token=${token}&username=${encodeURIComponent(user.username)}&id=${user.id}`);
 };
 
 const beginOAuth = (strategyName, humanName, optionsFactory) => (req, res, next) => {
   if (!ensureOAuthReady(strategyName, humanName, req, res)) return;
-  const options = optionsFactory(req);
-  passport.authenticate(strategyName, options)(req, res, next);
+  try {
+    const options = optionsFactory(req);
+    passport.authenticate(strategyName, options)(req, res, next);
+  } catch (error) {
+    console.error(`OAuth init error (${humanName}):`, error?.message || error);
+    res.redirect(oauthErrorRedirect(`Error iniciando autenticacion con ${humanName}`));
+  }
 };
 
 const oauthCallback = (strategyName, humanName) => (req, res, next) => {
   if (!ensureOAuthReady(strategyName, humanName, req, res)) return;
-  passport.authenticate(strategyName, {
-    session: false,
-    failureRedirect: oauthErrorRedirect(`No se pudo autenticar con ${humanName}`)
+  passport.authenticate(strategyName, { session: false }, (error, user, info) => {
+    if (error) {
+      console.error(`OAuth callback error (${humanName}):`, error?.message || error);
+      return res.redirect(oauthErrorRedirect(`Error interno del servidor con ${humanName}`));
+    }
+    if (!user) {
+      const reason = info?.message || `No se pudo autenticar con ${humanName}`;
+      return res.redirect(oauthErrorRedirect(reason));
+    }
+    req.user = user;
+    return next();
   })(req, res, next);
 };
 
