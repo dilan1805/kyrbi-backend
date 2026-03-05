@@ -12,6 +12,8 @@ const backendURL = process.env.PUBLIC_BACKEND_URL || `http://localhost:${process
 const frontendURL = process.env.PUBLIC_FRONTEND_URL || '';
 
 const hasSMTP = () => Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+const isEmailVerificationRequired = () =>
+  String(process.env.REQUIRE_EMAIL_VERIFICATION || 'true') === 'true' && hasSMTP();
 const mailer = () => nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT || 587),
@@ -71,26 +73,37 @@ export const register = async (req, res) => {
     }
 
     const user = await User.create({ username, email, password });
-    
-    user.emailVerificationToken = crypto.randomBytes(24).toString('hex');
-    user.emailVerificationExpires = new Date(Date.now() + 1000 * 60 * 60 * 24);
-    await user.save();
+    let verificationToken = null;
 
-    const verifyLink = `${backendURL}/api/auth/verify-email/${user.emailVerificationToken}`;
-    await sendMail(
-      user.email,
-      'Verifica tu correo en Kyrbi',
-      `<p>Hola ${user.username},</p><p>Para activar tu cuenta, verifica tu correo.</p><p><a href="${verifyLink}">Verificar correo</a></p><p>Si el enlace no funciona, usa este código: <strong>${user.emailVerificationToken}</strong></p>`
-    );
+    if (hasSMTP()) {
+      verificationToken = crypto.randomBytes(24).toString('hex');
+      user.emailVerificationToken = verificationToken;
+      user.emailVerificationExpires = new Date(Date.now() + 1000 * 60 * 60 * 24);
+      await user.save();
 
-    const token = jwt.sign({ id: user.id, username: user.username }, SECRET, { expiresIn: '7d' });
+      const verifyLink = `${backendURL}/api/auth/verify-email/${verificationToken}`;
+      await sendMail(
+        user.email,
+        'Verifica tu correo en Kyrbi',
+        `<p>Hola ${user.username},</p><p>Para activar tu cuenta, verifica tu correo.</p><p><a href="${verifyLink}">Verificar correo</a></p><p>Si el enlace no funciona, usa este codigo: <strong>${verificationToken}</strong></p>`
+      );
+    }
 
-    res.status(201).json({ 
-      message: 'Usuario registrado exitosamente. Verifica tu correo.',
-      user: { id: user.id, username: user.username, email: user.email },
-      token,
-      verifyTokenPreview: process.env.NODE_ENV === 'development' ? user.emailVerificationToken : undefined
-    });
+    const verificationRequired = isEmailVerificationRequired();
+    const responseBody = {
+      message: verificationRequired
+        ? 'Cuenta creada. Verifica tu correo antes de iniciar sesion.'
+        : 'Usuario registrado exitosamente.',
+      user: { id: user.id, username: user.username, email: user.email, emailVerified: Boolean(user.emailVerified) },
+      requiresEmailVerification: verificationRequired,
+      verifyTokenPreview: process.env.NODE_ENV === 'development' ? verificationToken : undefined
+    };
+
+    if (!verificationRequired) {
+      responseBody.token = jwt.sign({ id: user.id, username: user.username }, SECRET, { expiresIn: '7d' });
+    }
+
+    res.status(201).json(responseBody);
   } catch (error) {
     console.error(error);
     if (error?.name === 'SequelizeUniqueConstraintError') {
@@ -144,6 +157,13 @@ export const login = async (req, res) => {
 
     if (!passwordValid) {
       return res.status(401).json({ error: 'Credenciales incorrectas.' });
+    }
+
+    if (isEmailVerificationRequired() && !user.emailVerified) {
+      return res.status(403).json({
+        error: 'Debes verificar tu correo antes de iniciar sesion.',
+        code: 'email_not_verified'
+      });
     }
 
     if (process.env.RECAPTCHA_SECRET) {
@@ -278,6 +298,12 @@ export const verify2FA = async (req, res) => {
     if (!isAcceptedEmail(email)) return res.status(400).json({ error: 'Email invalido' });
     const user = await User.findOne({ where: { email } });
     if (!user) return res.status(401).json({ error: 'Usuario no encontrado' });
+    if (isEmailVerificationRequired() && !user.emailVerified) {
+      return res.status(403).json({
+        error: 'Debes verificar tu correo antes de iniciar sesion.',
+        code: 'email_not_verified'
+      });
+    }
 
     const verified = speakeasy.totp.verify({
       secret: user.twoFactorSecret,
@@ -433,3 +459,4 @@ export const updatePreferences = async (req, res) => {
     res.status(500).json({ error: 'Error actualizando preferencias' });
   }
 };
+

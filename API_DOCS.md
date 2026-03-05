@@ -1,4 +1,4 @@
-﻿# API Docs - Kyrbi Backend
+# API Docs - Kyrbi Backend
 
 Base URL local: `http://localhost:3000`  
 Base path API: `/api`
@@ -11,6 +11,7 @@ Kyrbi expone autenticacion, chat con persistencia, configuracion de usuario y me
 ### POST `/api/auth/register`
 Registra usuario con correo y contrasena.
 Se aceptan correos institucionales internos y con dominio completo (ejemplos: `user@irk`, `user@irk.mx`).
+Si `REQUIRE_EMAIL_VERIFICATION=true` y SMTP esta configurado, la respuesta no entrega `token` hasta verificar correo.
 
 Body:
 ```json
@@ -24,6 +25,7 @@ Body:
 ### POST `/api/auth/login`
 Inicia sesion con correo y contrasena.
 El login usa el mismo validador de correo que registro para evitar inconsistencias.
+Si el correo no esta verificado y la verificacion esta obligatoria, responde `403` con `code: "email_not_verified"`.
 
 Body:
 ```json
@@ -126,6 +128,7 @@ MAX_MESSAGE_LENGTH=1200
 APP_VERSION=1.0.0
 RELEASE_DATE=2026-03-03
 SQLITE_STORAGE=./database/kyrbi.sqlite
+REQUIRE_EMAIL_VERIFICATION=true
 # Alternativa:
 # DATABASE_URL=sqlite:./database/kyrbi.sqlite
 ```

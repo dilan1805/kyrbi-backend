@@ -17,6 +17,8 @@ services:
         generateValue: true
       - key: SQLITE_STORAGE
         value: /var/data/kyrbi.sqlite
+      - key: REQUIRE_EMAIL_VERIFICATION
+        value: "true"
       - key: DATABASE_URL
         value: sqlite:/var/data/kyrbi.sqlite
       - key: BACKEND_URL

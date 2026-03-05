@@ -51,6 +51,48 @@ describe('Auth Endpoints', () => {
     expect(res.statusCode).toEqual(401);
   });
 
+  it('should block login for unverified email when verification is required', async () => {
+    const previous = {
+      REQUIRE_EMAIL_VERIFICATION: process.env.REQUIRE_EMAIL_VERIFICATION,
+      SMTP_HOST: process.env.SMTP_HOST,
+      SMTP_USER: process.env.SMTP_USER,
+      SMTP_PASS: process.env.SMTP_PASS,
+    };
+
+    process.env.REQUIRE_EMAIL_VERIFICATION = 'true';
+    process.env.SMTP_HOST = 'smtp.test.local';
+    process.env.SMTP_USER = 'test-user';
+    process.env.SMTP_PASS = 'test-pass';
+
+    try {
+      const pendingUser = {
+        username: 'pending_verify_user',
+        email: 'pending.verify@example.com',
+        password: 'Password123!',
+      };
+
+      await User.create({
+        ...pendingUser,
+        emailVerified: false,
+      });
+
+      const res = await request(app)
+        .post('/api/auth/login')
+        .send({
+          email: pendingUser.email,
+          password: pendingUser.password,
+        });
+
+      expect(res.statusCode).toEqual(403);
+      expect(res.body).toHaveProperty('code', 'email_not_verified');
+    } finally {
+      process.env.REQUIRE_EMAIL_VERIFICATION = previous.REQUIRE_EMAIL_VERIFICATION;
+      process.env.SMTP_HOST = previous.SMTP_HOST;
+      process.env.SMTP_USER = previous.SMTP_USER;
+      process.env.SMTP_PASS = previous.SMTP_PASS;
+    }
+  });
+
   it('should allow institutional emails without TLD (ej. usuario@irk)', async () => {
     const institutionalUser = {
       username: 'inst_user',
