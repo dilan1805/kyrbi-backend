@@ -1,4 +1,4 @@
-﻿/* ==========================================================================
+/* ==========================================================================
    Backend para Ciencias para vivir mejor - Asistente Kyrbi
    Servidor Express con integración de IA real
    ========================================================================== */
@@ -47,31 +47,32 @@ app.use(async (req, res, next) => {
   }
 });
 
-// Logging básico
+// Structured Logging Middleware
 app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    console.log(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      method: req.method,
+      path: req.path,
+      status: res.statusCode,
+      duration: `${duration}ms`,
+      ip: req.ip,
+      userAgent: req.headers['user-agent']
+    }));
+  });
   next();
 });
 
-const helmetCsp = {
-  useDefaults: true,
-  directives: {
-    defaultSrc: ["'self'"],
-    scriptSrc: ["'self'", "'unsafe-inline'", "https:"],
-    styleSrc: ["'self'", "'unsafe-inline'", "https:"],
-    imgSrc: ["'self'", "data:", "https:"],
-    connectSrc: ["'self'", "https:"],
-    fontSrc: ["'self'", "data:", "https:"],
-    frameAncestors: ["'none'"],
-    upgradeInsecureRequests: []
-  }
-};
+// Security & Optimization Headers
 app.use(helmet({
   contentSecurityPolicy: helmetCsp,
-  hsts: { maxAge: 15552000 },
+  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
   frameguard: { action: 'deny' },
-  referrerPolicy: { policy: 'no-referrer' }
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' }
 }));
+
 
 app.use((req, res, next) => {
   const force = String(process.env.FORCE_HTTPS || 'false') === 'true';
